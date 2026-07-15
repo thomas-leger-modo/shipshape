@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.venv/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# Local config / secrets must never be committed (they live in ~/.config/shipshape).
+config.toml
+.env
+notion_user_id

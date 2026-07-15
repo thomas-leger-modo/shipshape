@@ -1,0 +1,18 @@
+[project]
+name = "shipshape"
+version = "0.1.0"
+description = "Prune merged git branches/worktrees and sync Notion ticket status from PR/release state."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "requests>=2.31",
+    "python-dotenv>=1",
+]
+
+[project.scripts]
+prune-local-branches = "shipshape.prune.cli:main"
+update-tickets = "shipshape.tickets.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.11"]
+build-backend = "uv_build"

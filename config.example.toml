@@ -1,0 +1,6 @@
+# Copy to ~/.config/shipshape/config.toml and set your Notion data source ID.
+# Only `update-tickets` reads this; `prune-local-branches` needs no config.
+
+[notion]
+# Your Notion task-board data source ID (a UUID) — find it in the board's URL.
+data_source_id = "<your-notion-data-source-id>"
