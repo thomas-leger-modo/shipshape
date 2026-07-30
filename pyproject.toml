@@ -1,7 +1,7 @@
 [project]
 name = "shipshape"
 version = "0.1.0"
-description = "Prune merged git branches/worktrees and sync Notion ticket status from PR/release state."
+description = "Reclaim busy ports, prune merged git branches/worktrees, and sync Notion ticket status from PR/release state."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -10,7 +10,9 @@ dependencies = [
 ]
 
 [project.scripts]
+ports = "shipshape.ports.cli:main"
 prune-local-branches = "shipshape.prune.cli:main"
+search-transcripts = "shipshape.transcripts.cli:main"
 update-tickets = "shipshape.tickets.cli:main"
 
 [build-system]
