@@ -10,22 +10,32 @@ import sys
 import tempfile
 from pathlib import Path
 
+from shipshape import procs
 from shipshape.prune.analyze import get_analysis
-from shipshape.ui import BOLD, DIM, GREEN, RED, RESET, YELLOW, confirm, get_preview_height, require, run_fzf
+from shipshape.ui import (
+    BOLD,
+    DIM,
+    GREEN,
+    RED,
+    RESET,
+    YELLOW,
+    choose,
+    collapse,
+    confirm,
+    get_preview_height,
+    require,
+    run_fzf,
+)
+
+STOP_AND_REMOVE = "Stop them, then remove the worktree"
+SKIP_WORKTREE = "Leave this worktree alone"
+CANCEL = "Cancel everything"
 
 
 def get_candidates(analysis: dict) -> list[dict]:
     candidates = [{"kind": "worktree", **worktree} for worktree in analysis["safe_worktrees"]]
     candidates.extend({"kind": "branch", **branch} for branch in analysis["safe_branches"])
     return candidates
-
-
-def collapse(path: str) -> str:
-    worktree_path = Path(path)
-    try:
-        return f"~/{worktree_path.relative_to(Path.home())}"
-    except ValueError:
-        return str(worktree_path)
 
 
 def format_candidate(candidate: dict) -> str:
@@ -91,7 +101,7 @@ def select_candidates(analysis: dict) -> list[dict]:
             preview_height=get_preview_height(
                 format_preview(candidate, analysis["trunk_sha"]) for candidate in candidates
             ),
-        )
+        ).rows
     return [candidates[int(row.split("\t", 1)[0])] for row in selected_rows]
 
 
@@ -99,6 +109,58 @@ def confirm_removal(selected: list[dict]) -> bool:
     worktree_count = sum(candidate["kind"] == "worktree" for candidate in selected)
     branch_count = sum(bool(candidate.get("branch")) for candidate in selected)
     return confirm(f"Remove {worktree_count} worktree(s) and {branch_count} branch(es)?")
+
+
+def resolve_occupied(selected: list[dict]) -> list[dict] | None:
+    """Settle what to do about worktrees that still have processes running inside them.
+
+    `git worktree remove` succeeds regardless, which leaves those processes alive with a working
+    directory that no longer exists — still holding whatever ports they had bound. This is where
+    orphaned dev servers come from, so they get dealt with before the directory disappears.
+    """
+    listening = procs.listeners()
+    resolved = []
+    for candidate in selected:
+        running = procs.processes_under(candidate["path"]) if candidate["kind"] == "worktree" else []
+        if not running:
+            resolved.append(candidate)
+            continue
+        print(f"\n{YELLOW}{collapse(candidate['path'])}{RESET} has {len(running)} live process(es):")
+        for process in running:
+            bound = [f":{listener.port}" for listener in listening if listener.pid == process.pid]
+            print(f"  {procs.label(process)} ({process.pid})  {DIM}{' '.join(bound) or 'no port'}{RESET}")
+        print(f"{DIM}Removing the worktree would leave these running with nowhere to live.{RESET}")
+        answer = choose("What should happen?", [STOP_AND_REMOVE, SKIP_WORKTREE, CANCEL])
+        if answer is None or answer == CANCEL:
+            return None
+        if answer == SKIP_WORKTREE:
+            continue
+        resolved.append({**candidate, "stop_first": True})
+    return resolved
+
+
+def clear_worktree(path: str) -> bool:
+    """Stop everything running inside a worktree about to be deleted; report whether it is now empty.
+
+    The worktree is rescanned here rather than reusing the list shown earlier, because the user has
+    since been through a confirmation prompt: PIDs may have been reissued, and anything started in
+    the meantime would otherwise be left behind as the very orphan this is meant to prevent.
+    """
+    for process in procs.processes_under(path):
+        outcome = procs.stop_chain(
+            process.pid,
+            lambda pid=process.pid: not procs.alive(pid),
+            procs.process_table(),
+            whole_chain=True,
+        )
+        for step in outcome.steps:
+            print(f"  {step.signal:<4} {step.label} ({step.pid})")
+    survivors = procs.processes_under(path)
+    for process in survivors:
+        refused = "a terminal is sitting in this worktree — close it or cd out"
+        reason = refused if procs.protected(process.executable) else "would not stop"
+        print(f"  {RED}{procs.label(process)} ({process.pid}): {reason}{RESET}")
+    return not survivors
 
 
 def candidate_id(candidate: dict) -> tuple:
@@ -116,6 +178,11 @@ def remove_candidates(selected: list[dict]) -> int:
     failed = 0
     for candidate in selected:
         if candidate["kind"] == "worktree":
+            if candidate.get("stop_first") and not clear_worktree(candidate["path"]):
+                # Deleting it now would strand whatever is still running, holding whatever it bound.
+                print(f"  {RED}leaving {collapse(candidate['path'])} in place{RESET}")
+                failed += 1
+                continue
             result = subprocess.run(["git", "worktree", "remove", candidate["path"]], check=False)
             if result.returncode != 0:
                 failed += 1
@@ -148,6 +215,13 @@ def main() -> int:
     selected = select_candidates(analysis)
     if not selected:
         print(f"{DIM}Nothing selected.{RESET}")
+        return 0
+    selected = resolve_occupied(selected)
+    if selected is None:
+        print(f"{DIM}Cancelled. Nothing changed.{RESET}")
+        return 0
+    if not selected:
+        print(f"{DIM}Nothing left to remove.{RESET}")
         return 0
     if not confirm_removal(selected):
         print(f"{DIM}Cancelled. Nothing changed.{RESET}")

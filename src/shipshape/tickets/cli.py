@@ -222,7 +222,7 @@ def select_candidates(candidates: list[dict], *, mode: str) -> list[dict]:
             header=f"{len(candidates)} proposed  |  SPACE select + next · CTRL-A all · CTRL-D clear · ENTER review",
             preview=preview_command,
             preview_height=get_preview_height(formatter(candidate) for candidate in candidates),
-        )
+        ).rows
     return [candidates[int(row.split("\t", 1)[0])] for row in selected_rows]
 
 
