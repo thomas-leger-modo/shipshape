@@ -1,6 +1,6 @@
 # shipshape
 
-Four small terminal tools for keeping a machine, a repo, and a task board tidy after PRs move:
+Five small terminal tools for keeping a machine, repos, and a task board tidy:
 
 - **`ports`** — see what is listening on every TCP port, which repo or worktree it came from, and
   whether a Docker container owns it. Flags anything launched from a directory that no longer exists
@@ -12,8 +12,10 @@ Four small terminal tools for keeping a machine, a repo, and a task board tidy a
   and get the command to reopen it.
 - **`update-tickets`** — reconcile the status of your Notion task-board tickets against the real
   state of their linked GitHub PRs and production deployments, and apply the changes you approve.
+- **`wt`** — jump between git worktrees, create one through a repo's setup script, or delete a
+  highlighted linked worktree after confirmation.
 
-All four are interactive `fzf`/`gum` pickers with previews. Nothing is changed without an explicit
+All five are interactive `fzf`/`gum` pickers. Nothing destructive happens without an explicit
 confirmation.
 
 ## Requirements
@@ -33,7 +35,13 @@ confirmation.
 uv tool install git+https://github.com/thomas-leger-modo/shipshape
 ```
 
-This puts `ports`, `prune-local-branches`, `search-transcripts` and `update-tickets` on your PATH.
+This puts `ports`, `prune-local-branches`, `search-transcripts`, `update-tickets`, and `wt` on your PATH.
+
+Because changing directory must happen in the current shell, add Shipshape's small Zsh integration:
+
+```bash
+eval "$(command wt --init zsh)"
+```
 
 To hack on it locally, install from a clone in editable mode:
 
@@ -108,6 +116,20 @@ worktree is not stale, and is never offered.
 `--free PORT` stops only provable orphans. If something live holds the port it refuses, names the
 owner, and exits non-zero — so a script or an agent can always reclaim its own mess and can never
 steal a server you are using. `--force` lifts that restriction.
+
+## `wt`
+
+Run `wt` anywhere to select worktrees across `~/code`, or from inside a repo to select only that
+repo's worktrees and offer `+ new worktree`. `WT_BASE` overrides the global search directory.
+
+- `ENTER` changes directory to the highlighted worktree.
+- `CTRL-D` asks for confirmation, then runs `git worktree remove` on the highlighted linked
+  worktree. The main worktree and the worktree containing the current shell are protected. If the
+  normal removal fails because the worktree has modified or untracked files, Git shows its warning
+  and a second confirmation lets you force the deletion.
+
+New worktrees are created through the repo's executable `scripts/setup_worktree.sh`, preserving any
+repo-specific setup.
 
 ## `prune-local-branches`
 
