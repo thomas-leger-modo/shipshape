@@ -121,12 +121,6 @@ The trunk is auto-detected from the remote's default branch (`origin/HEAD`), fal
 `origin/main`, so `main`, `master`, etc. all work. A branch/worktree is only offered when it has no
 uncommitted or untracked changes **and** is fully merged into the trunk.
 
-`git worktree remove` succeeds even when a process is still running inside the worktree, which
-leaves that process alive with a working directory that no longer exists — still holding whatever
-ports it had bound. This is where the orphans `ports` finds come from, so before removing a worktree
-that has live processes, `prune-local-branches` lists them and offers to stop them first, skip that
-worktree, or cancel.
-
 ## `search-transcripts`
 
 No configuration. Run it anywhere:
