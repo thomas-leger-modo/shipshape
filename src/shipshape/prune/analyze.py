@@ -29,17 +29,24 @@ def trunk_ref() -> str:
 
 
 def worktrees() -> list[dict]:
-    """Parse `git worktree list --porcelain` into {path, branch, detached} records."""
+    """Parse `git worktree list --porcelain` into {path, head, branch, prunable} records.
+
+    `prunable` marks a worktree whose directory git can no longer find: the admin record survives
+    the directory, so nothing inside it can be inspected. Recording each HEAD sha here means the
+    checks below never have to run inside a worktree to learn what it points at.
+    """
     records, current = [], {}
     for line in git("worktree", "list", "--porcelain").splitlines():
         if line.startswith("worktree "):
             if current:
                 records.append(current)
-            current = {"path": line[len("worktree ") :], "branch": None, "detached": False}
+            current = {"path": line[len("worktree ") :], "head": None, "branch": None, "prunable": False}
+        elif line.startswith("HEAD "):
+            current["head"] = line[len("HEAD ") :]
         elif line.startswith("branch "):
             current["branch"] = line[len("branch ") :].removeprefix("refs/heads/")
-        elif line == "detached":
-            current["detached"] = True
+        elif line.startswith("prunable"):
+            current["prunable"] = True
     if current:
         records.append(current)
     return records
@@ -56,10 +63,10 @@ def is_dirty(path: str) -> list[str]:
     return result.stdout.splitlines()
 
 
-def is_merged(ref: str, trunk: str, path: str = ".") -> bool:
+def is_merged(ref: str, trunk: str) -> bool:
     return (
         subprocess.run(
-            ["git", "-C", path, "merge-base", "--is-ancestor", ref, trunk],
+            ["git", "merge-base", "--is-ancestor", ref, trunk],
             capture_output=True,
             check=False,
         ).returncode
@@ -87,11 +94,11 @@ def get_analysis() -> dict:
     for t in trees:
         if t["path"] == main_path:
             continue
-        ref = "HEAD" if t["detached"] else t["branch"]
-        reasons, dirty = [], is_dirty(t["path"])
+        # A prunable worktree has no directory left, so there is no working tree left to be dirty.
+        reasons, dirty = [], [] if t["prunable"] else is_dirty(t["path"])
         if dirty:
             reasons.append("uncommitted/untracked changes")
-        if not is_merged(ref, trunk, t["path"]):
+        if not is_merged(t["head"], trunk):
             reasons.append("not merged into trunk")
 
         if reasons:
@@ -105,14 +112,14 @@ def get_analysis() -> dict:
                 },
             )
         else:
-            head_sha = git("-C", t["path"], "rev-parse", "HEAD")
             safe_worktrees.append(
                 {
                     "path": t["path"],
                     "branch": t["branch"],
-                    "head_sha": head_sha,
-                    "last_commit": git("-C", t["path"], "log", "-1", "--format=%h %s"),
-                    "change_summary": change_summary(head_sha),
+                    "head_sha": t["head"],
+                    "prunable": t["prunable"],
+                    "last_commit": git("log", "-1", "--format=%h %s", t["head"]),
+                    "change_summary": change_summary(t["head"]),
                 },
             )
 

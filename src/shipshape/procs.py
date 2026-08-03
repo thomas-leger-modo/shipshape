@@ -1,8 +1,5 @@
 """Processes, listening sockets, and where each process was launched from. No terminal UI here.
 
-Shared by `ports` (lists and reclaims them) and `prune-local-branches` (must not delete a worktree
-out from under a running process).
-
 The load-bearing fact: a process keeps its working directory even after that directory is deleted,
 and the kernel still reports the stale path. So a listener whose working directory no longer exists
 is a provable orphan — something left running by a worktree that has since been removed.
@@ -182,16 +179,6 @@ def alive(pid: int) -> bool:
 def protected(executable: str | None) -> bool:
     """Whether signalling this executable would take down the terminal session or the Docker engine."""
     return executable is not None and Path(executable).name.lstrip("-") in NEVER_SIGNAL
-
-
-def processes_under(directory: str) -> list[Process]:
-    """Processes whose working directory is inside `directory` — the ones a deletion would orphan."""
-    root = str(Path(directory).resolve())
-    return [
-        process
-        for process in process_table().values()
-        if process.cwd and (process.cwd == root or process.cwd.startswith(f"{root}/"))
-    ]
 
 
 def _git(directory: Path, *args: str) -> str | None:
