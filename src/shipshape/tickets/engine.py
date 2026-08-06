@@ -7,6 +7,7 @@ import json
 import re
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import NamedTuple
 
@@ -19,6 +20,7 @@ READY_FOR_REVIEW_LABEL = "Ready for Review"
 # Finished tickets are never re-checked — skip them at the query so we don't fetch/gh-probe them.
 TERMINAL_STATUSES = ("Released", "Cancelled")
 PR_URL_PATTERN = re.compile(r"github\.com/([\w.-]+)/([\w.-]+)/pull/(\d+)")
+MAX_GITHUB_WORKERS = 12
 
 
 class PRRef(NamedTuple):
@@ -226,26 +228,40 @@ def propose_status(current: str, prs: list[dict]) -> str | None:
 def collect_tickets() -> list[dict]:
     """One record per ticket: current + proposed status, and its PRs with deploy state resolved."""
     tickets = [parse_ticket(page) for page in query_my_tickets(notion_user_id())]
+    refs = list(dict.fromkeys(ref for ticket in tickets for ref in ticket["pr_refs"]))
+    repos = list(dict.fromkeys((ref.owner, ref.repo) for ref in refs))
 
-    deployments_by_repo = {
-        (ref.owner, ref.repo): get_prod_deployments(ref.owner, ref.repo)
-        for ticket in tickets
-        for ref in ticket["pr_refs"]
-    }
+    with ThreadPoolExecutor(max_workers=MAX_GITHUB_WORKERS) as pool:
+        deployment_futures = {repo: pool.submit(get_prod_deployments, *repo) for repo in repos}
+        pr_futures = {ref: pool.submit(gh_pr_state, ref) for ref in refs}
+        deployments_by_repo = {repo: future.result() for repo, future in deployment_futures.items()}
+        prs_by_ref = {ref: future.result() for ref, future in pr_futures.items()}
+
+    merged_refs = [
+        ref for ref, pr in prs_by_ref.items()
+        if pr["state"] == "MERGED" and pr.get("merge_sha")
+    ]
+
+    def find_deployment(ref: PRRef) -> ProdDeployment | None:
+        pr = prs_by_ref[ref]
+        return newest_containing_deployment(
+            ref.owner, ref.repo, pr["merge_sha"], deployments_by_repo[(ref.owner, ref.repo)],
+        )
+
+    with ThreadPoolExecutor(max_workers=MAX_GITHUB_WORKERS) as pool:
+        deployment_by_ref = dict(zip(merged_refs, pool.map(find_deployment, merged_refs), strict=True))
 
     out: list[dict] = []
     for ticket in tickets:
-        prs = [gh_pr_state(ref) for ref in ticket["pr_refs"]]
-        for pr in prs:
-            deployment = None
-            if pr["state"] == "MERGED" and pr.get("merge_sha"):
-                deployment = newest_containing_deployment(
-                    pr["owner"], pr["repo"], pr["merge_sha"], deployments_by_repo[(pr["owner"], pr["repo"])],
-                )
+        prs: list[dict] = []
+        for ref in ticket["pr_refs"]:
+            pr = prs_by_ref[ref].copy()
+            deployment = deployment_by_ref.get(ref)
             pr["prod_sha"] = deployment.sha if deployment else None
             pr["prod_deployed_at"] = deployment.deployed_at if deployment else None
             pr["prod_deployment_url"] = deployment.url if deployment else None
             pr["in_prod"] = deployment is not None
+            prs.append(pr)
         out.append(
             {
                 "page_id": ticket["page_id"],
