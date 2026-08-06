@@ -260,7 +260,16 @@ def offer_ready_labels(tickets: list[dict]) -> list[dict]:
     for candidate in selected:
         pr = candidate["pr"]
         engine.add_ready_label(pr["owner"], pr["repo"], pr["number"])
-    return engine.collect_tickets()
+        key = (pr["owner"], pr["repo"], pr["number"])
+        for ticket in tickets:
+            for linked_pr in ticket["prs"]:
+                if (linked_pr["owner"], linked_pr["repo"], linked_pr["number"]) != key:
+                    continue
+                linked_pr["ready_for_review"] = True
+                linked_pr["labels"] = sorted({*linked_pr["labels"], engine.READY_FOR_REVIEW_LABEL})
+    for ticket in tickets:
+        ticket["proposed"] = engine.propose_status(ticket["current"], ticket["prs"])
+    return tickets
 
 
 def offer_status_updates(tickets: list[dict]) -> int:
