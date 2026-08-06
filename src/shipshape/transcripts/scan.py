@@ -11,6 +11,7 @@ those get read. That is what keeps a 600 MB corpus searchable in about a second.
 from __future__ import annotations
 
 import json
+import shlex
 import subprocess
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -48,8 +49,8 @@ class Session:
     @property
     def resume_command(self) -> str:
         if self.agent == "pi":
-            return f"pi --session {self.session_id}"
-        return f"cd {self.cwd} && claude --resume {self.session_id}"
+            return shlex.join(["pi", "--session", self.session_id])
+        return f"cd {shlex.quote(self.cwd)} && {shlex.join(['claude', '--resume', self.session_id])}"
 
 
 def roots() -> list[Path]:

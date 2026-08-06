@@ -108,22 +108,43 @@ def select(hits: list[Hit]) -> Hit | None:
     return hits[int(selected[0].split("\t", 1)[0])] if selected else None
 
 
+def shell_init() -> str:
+    return """search-transcripts() {
+  if [[ "$1" == "--help" || "$1" == "-h" || "$1" == "--init" ]]; then
+    command search-transcripts "$@"
+    return
+  fi
+  local resume_command
+  resume_command="$(command search-transcripts --print-command "$@")" || return
+  [[ -n "$resume_command" ]] && print -rz -- "$resume_command"
+}"""
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="search-transcripts",
         description="Find which Claude Code or pi conversation mentioned something.",
     )
-    parser.add_argument("query", help="text to find, matched literally and case-insensitively")
-    query = parser.parse_args(sys.argv[1:]).query
+    parser.add_argument("query", nargs="?", help="text to find, matched literally and case-insensitively")
+    parser.add_argument("--init", choices=["zsh"], help=argparse.SUPPRESS)
+    parser.add_argument("--print-command", action="store_true", help=argparse.SUPPRESS)
+    args = parser.parse_args(sys.argv[1:])
+    if args.init:
+        print(shell_init())
+        return 0
+    if args.query is None:
+        parser.error("the following arguments are required: query")
     require("rg", "fzf")
 
-    hits = search(query)
+    hits = search(args.query)
     if not hits:
-        print(f"{DIM}No transcript mentions {query!r}.{RESET}")
+        print(f"{DIM}No transcript mentions {args.query!r}.{RESET}", file=sys.stderr if args.print_command else None)
         return 1
 
     chosen = select(hits)
-    if chosen:
+    if chosen and args.print_command:
+        print(chosen.session.resume_command)
+    elif chosen:
         print(f"{BOLD}{chosen.session.label}{RESET} {DIM}· {chosen.session.agent} · {chosen.total} hit(s){RESET}")
         print(f"  {chosen.session.resume_command}")
         print(f"  {DIM}{collapse(str(chosen.session.path))}{RESET}")

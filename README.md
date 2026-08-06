@@ -37,10 +37,11 @@ uv tool install git+https://github.com/thomas-leger-modo/shipshape
 
 This puts `ports`, `prune-local-branches`, `search-transcripts`, `update-tickets`, and `wt` on your PATH.
 
-Because changing directory must happen in the current shell, add Shipshape's small Zsh integration:
+Because changing directory and pre-filling a prompt must happen in the current shell, add Shipshape's small Zsh integrations:
 
 ```bash
 eval "$(command wt --init zsh)"
+eval "$(command search-transcripts --init zsh)"
 ```
 
 To hack on it locally, install from a clone in editable mode:
@@ -160,8 +161,9 @@ Results are grouped by conversation, not listed as matching lines, and ranked by
 mention the term: the session that says it a hundred times is the one you want, not the twelve that
 say it once. Each row shows the agent, when the conversation started, the match count and its title
 — Claude's own where it has one, otherwise the opening user turn. The preview lists the matching
-turns with timestamps, and `ENTER` prints the command to reopen the conversation plus the path to
-its transcript.
+turns with timestamps. With the Zsh integration, `ENTER` puts the command to reopen the conversation
+in the next prompt, ready to inspect, edit, or run. Without it, `ENTER` prints the command and the
+path to its transcript.
 
 Rows marked **subagent** are Claude's delegated-agent transcripts. Claude files those under the
 parent session's id, so resuming one reopens the parent conversation rather than that branch of it.
